@@ -1,0 +1,55 @@
+name: Build CEF Quickstart
+
+on:
+  push:
+    branches: [ master, develop ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@v1
+      with:
+        bun-version: latest
+    
+    - name: Setup MSVC
+      uses: microsoft/setup-msbuild@v2
+    
+    - name: Setup CMake
+      uses: jwlawson/actions-setup-cmake@v2
+      with:
+        cmake-version: '3.25'
+    
+    - name: Install dependencies
+      run: bun install
+    
+    - name: Build frontend
+      run: bun run build
+    
+    - name: Convert HTML to binary
+      run: bun run buildtobin
+    
+    - name: Build main application
+      run: bun run build:cmake main --verbose
+    
+    - name: Create release package
+      run: |
+        New-Item -ItemType Directory -Force -Path "release"
+        Copy-Item -Path "build\Release\*" -Destination "release\" -Recurse -Force
+        Compress-Archive -Path "release\*" -DestinationPath "cef-quickstart-windows.zip" -Force
+      shell: pwsh
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: cef-quickstart-windows
+        path: cef-quickstart-windows.zip
