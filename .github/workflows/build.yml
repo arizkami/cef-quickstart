@@ -7,8 +7,21 @@ on:
     branches: [ master ]
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
+  build:
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        include:
+          - os: windows-latest
+            platform: windows
+            artifact_name: cef-quickstart-windows.zip
+            build_command: bun run build:cmake main --verbose
+          - os: ubuntu-latest
+            platform: linux
+            artifact_name: cef-quickstart-linux.tar.gz
+            build_command: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build
+    
+    runs-on: ${{ matrix.os }}
     
     steps:
     - name: Checkout code
@@ -21,13 +34,35 @@ jobs:
       with:
         bun-version: latest
     
-    - name: Setup MSVC
+    - name: Setup MSVC (Windows)
+      if: matrix.platform == 'windows'
       uses: microsoft/setup-msbuild@v2
     
     - name: Setup CMake
       uses: jwlawson/actions-setup-cmake@v2
       with:
         cmake-version: '3.25'
+    
+    - name: Install system dependencies (Linux)
+      if: matrix.platform == 'linux'
+      run: |
+        sudo apt update
+        sudo apt install -y \
+          build-essential \
+          pkg-config \
+          libx11-dev \
+          libxext-dev \
+          libxrandr-dev \
+          libxcursor-dev \
+          libxinerama-dev \
+          libxi-dev \
+          libxss-dev \
+          libxxf86vm-dev \
+          libxkbcommon-dev \
+          libxkbcommon-x11-dev \
+          libwayland-dev \
+          wayland-protocols \
+          libegl1-mesa-dev
     
     - name: Install dependencies
       run: bun install
@@ -39,17 +74,31 @@ jobs:
       run: bun run buildtobin
     
     - name: Build main application
-      run: bun run build:cmake main --verbose
+      run: ${{ matrix.build_command }}
     
-    - name: Create release package
+    - name: Create release package (Windows)
+      if: matrix.platform == 'windows'
       run: |
         New-Item -ItemType Directory -Force -Path "release"
         Copy-Item -Path "build\Release\*" -Destination "release\" -Recurse -Force
-        Compress-Archive -Path "release\*" -DestinationPath "cef-quickstart-windows.zip" -Force
+        Compress-Archive -Path "release\*" -DestinationPath "${{ matrix.artifact_name }}" -Force
       shell: pwsh
+    
+    - name: Create release package (Linux)
+      if: matrix.platform == 'linux'
+      run: |
+        mkdir -p release
+        cp -r build/Release/* release/
+        tar -czf ${{ matrix.artifact_name }} -C release .
+    
+    - name: Show CEF library size (Linux)
+      if: matrix.platform == 'linux'
+      run: |
+        echo "CEF library size after stripping:"
+        ls -lh release/libcef.so || echo "libcef.so not found"
     
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: cef-quickstart-windows
-        path: cef-quickstart-windows.zip
+        name: cef-quickstart-${{ matrix.platform }}
+        path: ${{ matrix.artifact_name }}

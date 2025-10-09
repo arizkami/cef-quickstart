@@ -1,24 +1,31 @@
-// Remove the manual defines since CEF already defines them on command line
-// #define WIN32_LEAN_AND_MEAN
-// #define NOMINMAX
-#include <windows.h>
-#include <shellapi.h>  // Add this for Shell_NotifyIcon
+// Cross-platform includes
+#ifdef _WIN32
+    // Remove the manual defines since CEF already defines them on command line
+    // #define WIN32_LEAN_AND_MEAN
+    // #define NOMINMAX
+    #include <windows.h>
+    #include <shellapi.h>  // Add this for Shell_NotifyIcon
 
-// Undefine Windows macros that conflict with CEF
-#ifdef GetFirstChild
-#undef GetFirstChild
-#endif
-#ifdef GetNextSibling
-#undef GetNextSibling
-#endif
-#ifdef GetPrevSibling
-#undef GetPrevSibling
-#endif
-#ifdef GetParent
-#undef GetParent
+    // Undefine Windows macros that conflict with CEF
+    #ifdef GetFirstChild
+    #undef GetFirstChild
+    #endif
+    #ifdef GetNextSibling
+    #undef GetNextSibling
+    #endif
+    #ifdef GetPrevSibling
+    #undef GetPrevSibling
+    #endif
+    #ifdef GetParent
+    #undef GetParent
+    #endif
+#else
+    // Linux/Unix includes
+    #include <unistd.h>
+    #include <signal.h>
 #endif
 
-// Removed SDL includes - using CEF views exclusively
+// CEF includes
 #include "include/cef_app.h"
 #include "include/cef_browser.h"
 #include "include/cef_crash_util.h"
@@ -44,10 +51,13 @@ CefRefPtr<CefWindow> g_cef_window;
 CefRefPtr<CefBrowserView> g_browser_view;
 bool g_running = true;
 
-// Global icon handle for reuse
+#ifdef _WIN32
+// Global icon handle for reuse (Windows only)
 static HICON g_app_icon = NULL;
+#endif
 
-// Load application icon once and cache it
+#ifdef _WIN32
+// Load application icon once and cache it (Windows only)
 HICON LoadApplicationIcon() {
     if (g_app_icon) {
         return g_app_icon; // Return cached icon
@@ -75,8 +85,10 @@ HICON LoadApplicationIcon() {
     
     return g_app_icon;
 }
+#endif
 
-// Set taskbar icon with proper window class registration
+#ifdef _WIN32
+// Set taskbar icon with proper window class registration (Windows only)
 void SetPermanentTaskbarIcon(HWND hwnd) {
     if (!hwnd) {
         Logger::LogMessage("Invalid window handle for taskbar icon");
@@ -103,8 +115,10 @@ void SetPermanentTaskbarIcon(HWND hwnd) {
     
     Logger::LogMessage("Permanent taskbar icon set successfully");
 }
+#endif
 
-// Alternative method: Set application ID to distinguish from Chromium
+#ifdef _WIN32
+// Alternative method: Set application ID to distinguish from Chromium (Windows only)
 void SetApplicationUserModelID(HWND hwnd) {
     // Load Shell32.dll dynamically to avoid dependency issues
     HMODULE hShell32 = LoadLibrary(L"Shell32.dll");
@@ -125,8 +139,10 @@ void SetApplicationUserModelID(HWND hwnd) {
         FreeLibrary(hShell32);
     }
 }
+#endif
 
-// Convert Windows HICON to CEF image for window icon
+#ifdef _WIN32
+// Convert Windows HICON to CEF image for window icon (Windows only)
 CefRefPtr<CefImage> ConvertIconToCefImage(HICON hIcon) {
     if (!hIcon) {
         return nullptr;
@@ -192,6 +208,7 @@ CefRefPtr<CefImage> ConvertIconToCefImage(HICON hIcon) {
     
     return image;
 }
+#endif
 
 // Custom browser view delegate to hide browser UI
 class CustomBrowserViewDelegate : public CefBrowserViewDelegate {
@@ -224,6 +241,7 @@ public:
     
     // Called when window is created - set the icon here
     void OnWindowCreated(CefRefPtr<CefWindow> window) override {
+#ifdef _WIN32
         // Get window handle
         HWND hwnd = window->GetWindowHandle();
         if (!hwnd) {
@@ -250,6 +268,10 @@ public:
         } else {
             Logger::LogMessage("Failed to load application icon in OnWindowCreated");
         }
+#else
+        // Linux/Unix - basic window setup
+        Logger::LogMessage("Window created on Linux platform");
+#endif
     }
     
     // Use standard window frame to ensure proper taskbar integration
@@ -285,7 +307,8 @@ void HandleEvents() {
     // No additional event handling needed
 }
 
-// Use WinMain instead of main for Windows applications without console
+// Cross-platform main function
+#ifdef _WIN32
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
     // Pre-load application icon to ensure it's available
     LoadApplicationIcon();
@@ -295,6 +318,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     
     void* sandbox_info = nullptr;
     CefMainArgs main_args(GetModuleHandle(nullptr));
+#else
+int main(int argc, char* argv[]) {
+    void* sandbox_info = nullptr;
+    CefMainArgs main_args(argc, argv);
+#endif
 
     // Create app instance for both main and sub-processes
     CefRefPtr<SimpleApp> app(new SimpleApp);
@@ -376,12 +404,17 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     g_cef_window->CenterWindow(CefSize(1200, 800));
 
     // Final taskbar icon verification after window is fully shown
+#ifdef _WIN32
     Sleep(200); // Brief delay for window initialization
     HWND hwnd = g_cef_window->GetWindowHandle();
     if (hwnd) {
         SetPermanentTaskbarIcon(hwnd);
         Logger::LogMessage("Final taskbar icon verification completed");
     }
+#else
+    usleep(200000); // 200ms delay for window initialization on Linux
+    Logger::LogMessage("Window initialization completed on Linux");
+#endif
 
     // Log startup information
     Logger::LogMessage("=== SwipeIDE CEF + SDL Application ===");
@@ -397,7 +430,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     while (g_running && g_cef_window && !g_cef_window->IsClosed()) {
         HandleEvents();
         CefDoMessageLoopWork();
+#ifdef _WIN32
         Sleep(1); // Small delay to prevent 100% CPU usage
+#else
+        usleep(1000); // 1ms delay on Linux
+#endif
     }
 
     // Cleanup

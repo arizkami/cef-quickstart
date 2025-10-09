@@ -16,11 +16,8 @@ namespace SimpleIPC {
     std::string IPCHandler::HandleCall(const std::string& method, const std::string& message) {
         auto it = handlers_.find(method);
         if (it != handlers_.end()) {
-            try {
-                return it->second(message);
-            } catch (const std::exception& e) {
-                return "Error: " + std::string(e.what());
-            }
+            // Call the handler directly without exception handling since CEF disables exceptions
+            return it->second(message);
         } else {
             return "Error: Unknown method: " + method;
         }
@@ -84,7 +81,13 @@ namespace SimpleIPC {
     std::string HandleGetSystemInfo(const std::string& message) {
         std::stringstream ss;
         ss << "{";
+#ifdef _WIN32
         ss << "\"platform\": \"Windows\",";
+#elif defined(__APPLE__)
+        ss << "\"platform\": \"macOS\",";
+#else
+        ss << "\"platform\": \"Linux\",";
+#endif
         ss << "\"cef_version\": \"" << CEF_VERSION << "\",";
         ss << "\"timestamp\": \"" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "\"";
         ss << "}";

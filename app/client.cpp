@@ -7,6 +7,11 @@
 #include "include/views/cef_window.h"
 #include <SDL3/SDL.h>
 
+// Cross-platform includes
+#ifdef _WIN32
+    #include <windows.h>
+#endif
+
 // Global variables
 extern SDL_Window* g_sdl_window;
 extern CefRefPtr<CefWindow> g_cef_window;
@@ -463,8 +468,8 @@ bool SimpleClient::OnPreKeyEvent(CefRefPtr<CefBrowser> browser,
     
     // Block dangerous Chrome shortcuts that could expose browser UI
     if (event.type == KEYEVENT_KEYDOWN || event.type == KEYEVENT_RAWKEYDOWN) {
-        // Block F12 (Developer Tools)
-        if (event.windows_key_code == VK_F12) {
+        // Block F12 (Developer Tools) - cross-platform key code
+        if (event.windows_key_code == 123) { // F12 key code
             Logger::LogMessage("Blocked F12 developer tools shortcut");
             return true; // Block the key event
         }
@@ -502,14 +507,14 @@ bool SimpleClient::OnPreKeyEvent(CefRefPtr<CefBrowser> browser,
         }
         
         // Block F5 and Ctrl+R (Refresh) - handled by frontend
-        if (event.windows_key_code == VK_F5 || 
+        if (event.windows_key_code == 116 || // F5 key code
             (event.windows_key_code == 'R' && (event.modifiers & EVENTFLAG_CONTROL_DOWN))) {
             Logger::LogMessage("Blocked browser refresh shortcut - handled by frontend");
             return true;
         }
         
         // Block Ctrl+Shift+Delete (Clear Browsing Data)
-        if (event.windows_key_code == VK_DELETE && 
+        if (event.windows_key_code == 46 && // Delete key code
             (event.modifiers & EVENTFLAG_CONTROL_DOWN) && 
             (event.modifiers & EVENTFLAG_SHIFT_DOWN)) {
             Logger::LogMessage("Blocked Ctrl+Shift+Delete clear data shortcut");
@@ -591,11 +596,17 @@ void SimpleClient::SpawnNewWindow() {
     
     // Create window info for the new browser window
     CefWindowInfo window_info;
+    
+#ifdef _WIN32
     window_info.SetAsPopup(nullptr, "SwipeIDE - New Window");
     window_info.bounds.x = 100;
     window_info.bounds.y = 100;
     window_info.bounds.width = 1200;
     window_info.bounds.height = 800;
+#else
+    // Linux - use windowed mode
+    window_info.SetAsChild(0, CefRect(100, 100, 1200, 800));
+#endif
     
     // Browser settings
     CefBrowserSettings browser_settings;

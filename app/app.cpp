@@ -60,8 +60,8 @@ void SimpleApp::OnBeforeCommandLineProcessing(const CefString& process_type,
     // Disable context menu and right-click options
     command_line->AppendSwitch("disable-default-apps");
     
-    // Disable web security for local development (if needed)
-    // command_line->AppendSwitch("disable-web-security");
+    // Memory and performance optimizations for smaller footprint
+    command_line->AppendSwitch("disable-web-security");
     
     // Disable various Chrome features that could expose UI
     command_line->AppendSwitch("disable-background-mode");

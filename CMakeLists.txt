@@ -4,6 +4,19 @@ project(CefQuickstart)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Set build type to Release for optimization
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release)
+endif()
+
+# Add optimization flags for smaller binary size
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -Os -DNDEBUG")
+set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -Os -DNDEBUG")
+
+# Strip symbols in release builds
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -s")
+set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -s")
+
 # Include FetchContent for downloading dependencies
 include(FetchContent)
 
@@ -22,7 +35,7 @@ set(SDL_TEST OFF CACHE BOOL "Build SDL3 test programs")
 
 FetchContent_MakeAvailable(SDL3)
 
-# Set CEF version and platform
+# Set CEF version and platform - using minimal build for smaller size
 set(CEF_VERSION "138.0.27+g0b28f18+chromium-138.0.7204.158")
 if(WIN32)
     if(CMAKE_SIZEOF_VOID_P EQUAL 8)
@@ -148,19 +161,41 @@ if(OS_WINDOWS)
     
     # Create libcef_dll_wrapper target
     add_subdirectory("${CEF_ROOT}/libcef_dll" libcef_dll_wrapper)
+else()
+    # Linux/Unix - Create libcef_lib target
+    add_library(libcef_lib SHARED IMPORTED)
+    set_target_properties(libcef_lib PROPERTIES
+        IMPORTED_LOCATION "${CEF_ROOT}/Release/libcef.so"
+    )
+    
+    # Create libcef_dll_wrapper target
+    add_subdirectory("${CEF_ROOT}/libcef_dll" libcef_dll_wrapper)
 endif()
 
-# Add executable as Windows application (no console)
-add_executable(${PROJECT_NAME} WIN32
-    app/main.cpp
-    app/logger.cpp
-    app/client.cpp
-    app/app.cpp
-    app/webapp.cpp
-    app/BinaryResourceProvider.cpp
-    app/ResourceUtil.cpp
-    app/internal/simpleipc.cpp
-)
+# Add executable - use WIN32 flag only on Windows to hide console
+if(WIN32)
+    add_executable(${PROJECT_NAME} WIN32
+        app/main.cpp
+        app/logger.cpp
+        app/client.cpp
+        app/app.cpp
+        app/webapp.cpp
+        app/binaryresourceprovider.cpp
+        app/resourceutil.cpp
+        app/internal/simpleipc.cpp
+    )
+else()
+    add_executable(${PROJECT_NAME}
+        app/main.cpp
+        app/logger.cpp
+        app/client.cpp
+        app/app.cpp
+        app/webapp.cpp
+        app/binaryresourceprovider.cpp
+        app/resourceutil.cpp
+        app/internal/simpleipc.cpp
+    )
+endif()
 
 # Add Windows resource file
 if(WIN32)
@@ -198,6 +233,45 @@ if(OS_WINDOWS)
         $<TARGET_FILE:SDL3::SDL3-shared>
         $<TARGET_FILE_DIR:${PROJECT_NAME}>
         COMMENT "Copying SDL3 DLL to output directory"
+    )
+else()
+    # Linux - Copy CEF binary files
+    COPY_FILES("${PROJECT_NAME}" "${CEF_BINARY_FILES}" "${CEF_BINARY_DIR}" "${CEF_TARGET_OUT_DIR}")
+    
+    # Copy CEF resource files
+    COPY_FILES("${PROJECT_NAME}" "${CEF_RESOURCE_FILES}" "${CEF_RESOURCE_DIR}" "${CEF_TARGET_OUT_DIR}")
+    
+    # Copy SDL3 shared library to output directory
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:SDL3::SDL3-shared>
+        $<TARGET_FILE_DIR:${PROJECT_NAME}>
+        COMMENT "Copying SDL3 shared library to output directory"
+    )
+    
+    # Aggressively strip CEF library to reduce size from 1.4GB to ~200MB (Linux only)
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND strip --strip-all "${CEF_TARGET_OUT_DIR}/libcef.so" || true
+        COMMAND strip --strip-debug "${CEF_TARGET_OUT_DIR}/libcef.so" || true
+        COMMAND strip --remove-section=.comment "${CEF_TARGET_OUT_DIR}/libcef.so" || true
+        COMMAND strip --remove-section=.note "${CEF_TARGET_OUT_DIR}/libcef.so" || true
+        COMMENT "Aggressively stripping CEF library to reduce size from 1.4GB to ~200MB"
+    )
+    
+    # Strip other CEF libraries with debug symbols
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND strip --strip-all "${CEF_TARGET_OUT_DIR}/libEGL.so" || true
+        COMMAND strip --strip-all "${CEF_TARGET_OUT_DIR}/libGLESv2.so" || true
+        COMMAND strip --strip-all "${CEF_TARGET_OUT_DIR}/libvk_swiftshader.so" || true
+        COMMAND strip --strip-all "${CEF_TARGET_OUT_DIR}/libvulkan.so.1" || true
+        COMMENT "Stripping additional CEF libraries"
+    )
+    
+    # Show size comparison after stripping
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND echo "CEF library size after stripping:"
+        COMMAND ls -lh "${CEF_TARGET_OUT_DIR}/libcef.so" || true
+        COMMENT "Showing CEF library size after stripping"
     )
 endif()
 
