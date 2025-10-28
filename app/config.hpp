@@ -17,6 +17,12 @@
 #define MIN_WINDOW_WIDTH 800
 #define MIN_WINDOW_HEIGHT 600
 
+// Window mode enumeration
+enum class WindowMode {
+    WINDOWED,    // Standard window with title bar and borders
+    BORDERLESS   // Borderless window with custom controls
+};
+
 // Debug configuration
 #ifdef _DEBUG
     #define DEBUG_MODE 1
@@ -85,6 +91,32 @@ public:
     
     static std::string GetResourcePath() {
         return "index.html";
+    }
+    
+    // Window mode configuration
+    static WindowMode GetWindowMode() {
+        // Default to borderless for custom UI experience
+        // Can be overridden by command line args or config file
+        return WindowMode::BORDERLESS;
+    }
+    
+    static bool IsWindowedMode() {
+        return GetWindowMode() == WindowMode::WINDOWED;
+    }
+    
+    static bool IsBorderlessMode() {
+        return GetWindowMode() == WindowMode::BORDERLESS;
+    }
+    
+    static std::string GetWindowModeString() {
+        switch (GetWindowMode()) {
+            case WindowMode::WINDOWED:
+                return "windowed";
+            case WindowMode::BORDERLESS:
+                return "borderless";
+            default:
+                return "unknown";
+        }
     }
 };
 

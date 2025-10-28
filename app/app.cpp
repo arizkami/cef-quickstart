@@ -72,17 +72,22 @@ void SimpleApp::OnBeforeCommandLineProcessing(const CefString& process_type,
     // Disable print preview and save page functionality
     command_line->AppendSwitch("disable-print-preview");
     
-    // Enable Window Controls Overlay feature for PWA-like window controls
-    // This allows web content to extend into the title bar area
-    command_line->AppendSwitchWithValue("enable-features", 
-        "WindowControlsOverlay,WebAppWindowControlsOverlay");
-        
-    // Enable experimental web platform features that may be needed for WCO
+    // Disable native window frame for custom title bar implementation
+    command_line->AppendSwitch("disable-features=WindowControlsOverlay");
+    
+    // Enable custom title bar area for native window controls
     command_line->AppendSwitch("enable-experimental-web-platform-features");
     
-    // Enable blink features for better WCO support
+    // Allow web content to extend into title bar area
     command_line->AppendSwitchWithValue("enable-blink-features", 
-        "WindowControlsOverlay,CSSEnvironmentVariables");
+        "CSSEnvironmentVariables");
+    
+    command_line->AppendSwitchWithValue("enable-features",
+    "WindowControlsOverlay,WebAppWindowControlsOverlay");
+    command_line->AppendSwitch("enable-experimental-web-platform-features");
+    command_line->AppendSwitchWithValue("enable-blink-features",
+    "WindowControlsOverlay,CSSEnvironmentVariables");
+
 }
 
 void SimpleApp::OnRegisterCustomSchemes(CefRawPtr<CefSchemeRegistrar> registrar) {

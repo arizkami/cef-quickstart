@@ -2,6 +2,7 @@
 #include "config.hpp"
 #include "logger.hpp"
 #include "internal/simpleipc.hpp"
+#include "window_mode_manager.hpp"
 #include "include/wrapper/cef_helpers.h"
 #include "include/cef_app.h"
 #include "include/views/cef_window.h"
@@ -110,11 +111,79 @@ bool SimpleClient::OnQuery(CefRefPtr<CefBrowser> browser,
         if (g_cef_window) {
             if (g_cef_window->IsMaximized()) {
                 callback->Success("maximized");
+            } else if (g_cef_window->IsMinimized()) {
+                callback->Success("minimized");
             } else {
                 callback->Success("normal");
             }
             return true;
         }
+    }
+    else if (request_str == "is_window_maximized") {
+        if (g_cef_window) {
+            callback->Success(g_cef_window->IsMaximized() ? "true" : "false");
+            return true;
+        }
+    }
+    else if (request_str == "get_window_controls_info") {
+        // Return information about window controls - use web-based controls for now
+        std::string info = "{";
+        info += "\"hasNativeControls\": false,";  // Use web-based controls
+        info += "\"useWebControls\": true,";
+        info += "\"platform\": \"";
+#ifdef _WIN32
+        info += "windows";
+#elif defined(__APPLE__)
+        info += "macos";
+#else
+        info += "linux";
+#endif
+        info += "\",";
+        info += "\"controlsPosition\": \"";
+#ifdef __APPLE__
+        info += "left";  // macOS has controls on the left
+#else
+        info += "right"; // Windows and Linux have controls on the right
+#endif
+        info += "\"";
+        info += "}";
+        callback->Success(info);
+        return true;
+    }
+    else if (request_str == "toggle_window_mode") {
+        if (g_cef_window && WindowModeManager::CanToggleMode()) {
+            WindowModeManager::ToggleWindowMode(g_cef_window);
+            callback->Success(WindowModeManager::GetModeString());
+            return true;
+        }
+        callback->Failure(0, "Cannot toggle window mode");
+        return true;
+    }
+    else if (request_str == "get_window_mode") {
+        if (g_cef_window) {
+            callback->Success(WindowModeManager::GetModeString());
+            return true;
+        }
+        callback->Failure(0, "No window available");
+        return true;
+    }
+    else if (request_str == "set_windowed_mode") {
+        if (g_cef_window) {
+            WindowModeManager::SetWindowedMode(g_cef_window);
+            callback->Success("windowed");
+            return true;
+        }
+        callback->Failure(0, "No window available");
+        return true;
+    }
+    else if (request_str == "set_borderless_mode") {
+        if (g_cef_window) {
+            WindowModeManager::SetBorderlessMode(g_cef_window);
+            callback->Success("borderless");
+            return true;
+        }
+        callback->Failure(0, "No window available");
+        return true;
     }
     else if (request_str == "spawn_new_window") {
         // Create a new browser window
@@ -603,6 +672,7 @@ void SimpleClient::SpawnNewWindow() {
     window_info.bounds.y = 100;
     window_info.bounds.width = 1200;
     window_info.bounds.height = 800;
+    window_info.style |= WS_OVERLAPPEDWINDOW;
 #else
     // Linux - use windowed mode
     window_info.SetAsChild(0, CefRect(100, 100, 1200, 800));

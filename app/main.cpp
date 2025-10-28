@@ -44,6 +44,8 @@
 #include "client.hpp"
 #include "app.hpp"
 #include "binaryresourceprovider.hpp"
+#include "native_window_controls.hpp"
+#include "window_mode_manager.hpp"
 
 // Global variables
 CefRefPtr<SimpleClient> g_client;
@@ -241,6 +243,11 @@ public:
     
     // Called when window is created - set the icon here
     void OnWindowCreated(CefRefPtr<CefWindow> window) override {
+        Logger::LogMessage("OnWindowCreated called");
+        
+        // Temporarily disable native window controls to debug crash
+        // NativeWindowControls::SetupNativeControls(window);
+        
 #ifdef _WIN32
         // Get window handle
         HWND hwnd = window->GetWindowHandle();
@@ -272,11 +279,27 @@ public:
         // Linux/Unix - basic window setup
         Logger::LogMessage("Window created on Linux platform");
 #endif
+        
+        // Initialize window mode manager and apply initial mode
+        WindowModeManager::Initialize();
+        WindowModeManager::RestoreWindowState(window);
+        
+        // Apply the configured window mode
+        WindowModeManager::ApplyWindowMode(window, WindowModeManager::GetCurrentMode(window));
+        
+        // Temporarily disable native controls position setup
+        // NativeWindowControls::SetControlsPosition(window, 0, 0, 0, 32);
+        
+        Logger::LogMessage("OnWindowCreated completed");
     }
     
-    // Use standard window frame to ensure proper taskbar integration
+    // Use frameless window for native window controls
     bool IsFrameless(CefRefPtr<CefWindow> window) override {
-        return true;  // Use standard frame for reliable taskbar icon display
+#ifdef _WIN32
+        return false;  // Windows: Use native frame with extended client area
+#else
+        return true;   // macOS/Linux: Use frameless with native controls
+#endif
     }
     
     // Allow window to be resizable
@@ -291,6 +314,8 @@ public:
     
     // Handle window close
     bool CanClose(CefRefPtr<CefWindow> window) override {
+        // Save window state before closing
+        WindowModeManager::SaveWindowState(window);
         g_running = false;
         return true;
     }
@@ -324,21 +349,27 @@ int main(int argc, char* argv[]) {
     CefMainArgs main_args(argc, argv);
 #endif
 
+    Logger::LogMessage("Starting CEF application initialization");
+
     // Create app instance for both main and sub-processes
     CefRefPtr<SimpleApp> app(new SimpleApp);
+    Logger::LogMessage("Created SimpleApp instance");
     
     // CEF sub-process check
+    Logger::LogMessage("Checking for CEF sub-process");
     int exit_code = CefExecuteProcess(main_args, app.get(), sandbox_info);
     if (exit_code >= 0) {
+        Logger::LogMessage("CEF sub-process detected, exiting");
         return exit_code;
     }
+    Logger::LogMessage("Main process continuing");
 
     std::string windowTitle = AppConfig::IsDebugMode() ? 
         "SwipeIDE - Development Mode" : "SwipeIDE - Release Mode";
 
-    // CEF settings with security enhancements
+    // CEF settings - disable sandbox for development
     CefSettings settings;
-    settings.no_sandbox = false;  // Enable sandboxing for security
+    settings.no_sandbox = true;  // Disable sandboxing for development (avoids chrome-sandbox setup)
     settings.multi_threaded_message_loop = false;
     settings.windowless_rendering_enabled = false;
     settings.log_severity = LOGSEVERITY_DISABLE;  // Disable logging to reduce overhead
@@ -353,7 +384,13 @@ int main(int argc, char* argv[]) {
     // Use empty subprocess path to let CEF handle it automatically
     CefString(&settings.browser_subprocess_path).FromASCII("");
 
-    CefInitialize(main_args, settings, app.get(), sandbox_info);
+    Logger::LogMessage("Initializing CEF");
+    bool cef_init_result = CefInitialize(main_args, settings, app.get(), sandbox_info);
+    if (!cef_init_result) {
+        Logger::LogMessage("CEF initialization failed");
+        return 1;
+    }
+    Logger::LogMessage("CEF initialized successfully");
 
     // Initialize crash reporting if enabled
     if (CefCrashReportingEnabled()) {

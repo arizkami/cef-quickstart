@@ -183,6 +183,8 @@ if(WIN32)
         app/binaryresourceprovider.cpp
         app/resourceutil.cpp
         app/internal/simpleipc.cpp
+        app/native_window_controls.cpp
+        app/window_mode_manager.cpp
     )
 else()
     add_executable(${PROJECT_NAME}
@@ -194,6 +196,8 @@ else()
         app/binaryresourceprovider.cpp
         app/resourceutil.cpp
         app/internal/simpleipc.cpp
+        app/native_window_controls.cpp
+        app/window_mode_manager.cpp
     )
 endif()
 
@@ -213,6 +217,29 @@ target_link_libraries(${PROJECT_NAME}
     libcef_dll_wrapper
     ${CEF_STANDARD_LIBS}
 )
+
+# Add platform-specific libraries for native window controls
+if(WIN32)
+    target_link_libraries(${PROJECT_NAME} dwmapi)
+elseif(APPLE)
+    target_link_libraries(${PROJECT_NAME} "-framework Cocoa")
+elseif(UNIX)
+    # Find and link GTK4 or GTK3
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(GTK4 gtk4)
+    if(GTK4_FOUND)
+        target_link_libraries(${PROJECT_NAME} ${GTK4_LIBRARIES})
+        target_include_directories(${PROJECT_NAME} PRIVATE ${GTK4_INCLUDE_DIRS})
+        target_compile_options(${PROJECT_NAME} PRIVATE ${GTK4_CFLAGS_OTHER})
+        message(STATUS "Using GTK4 for native window controls")
+    else()
+        pkg_check_modules(GTK3 REQUIRED gtk+-3.0)
+        target_link_libraries(${PROJECT_NAME} ${GTK3_LIBRARIES})
+        target_include_directories(${PROJECT_NAME} PRIVATE ${GTK3_INCLUDE_DIRS})
+        target_compile_options(${PROJECT_NAME} PRIVATE ${GTK3_CFLAGS_OTHER})
+        message(STATUS "Using GTK3 for native window controls")
+    endif()
+endif()
 
 # Include directories
 target_include_directories(${PROJECT_NAME} PRIVATE

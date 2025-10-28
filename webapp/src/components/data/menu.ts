@@ -59,6 +59,9 @@ const editorMenu: MenuSection[] = [
             { label: "Terminal", action: "view.terminal", toggle: true },
             //@ts-expect-error
             { separator: true },
+            { label: "Toggle Window Mode", action: "window.toggle_mode", shortcut: "F11" },
+            //@ts-expect-error
+            { separator: true },
             { label: "Zoom In", action: "view.zoomIn" },
             { label: "Zoom Out", action: "view.zoomOut" },
             { label: "Reset Zoom", action: "view.resetZoom" },
