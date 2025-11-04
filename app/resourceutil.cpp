@@ -2,16 +2,50 @@
 #include "webapp.hpp"
 #include <map>
 #include <algorithm>
+#include <mutex>
 #include "include/cef_stream.h"
 
 namespace ResourceUtil {
     
-    // Resource path to ID mapping
+    // Global preloaded resources storage
+    static std::map<std::string, PreloadedResource> g_preloadedResources;
+    static std::mutex g_resourceMutex;
+    static bool g_resourcesInitialized = false;
+    
+    // Resource path to ID mapping (single HTML file with inlined assets)
     static const std::map<std::string, int> resourceMap = {
-        {"/index.html", IDR_HTML_INDEX},
-        {"/main.css", IDR_CSS_MAIN},
-        {"/main.js", IDR_JS_MAIN}
+        {"/index.html", IDR_HTML_INDEX}
     };
+    
+    void InitializePreloadedResources() {
+        std::lock_guard<std::mutex> lock(g_resourceMutex);
+        
+        if (g_resourcesInitialized) {
+            return; // Already initialized
+        }
+        
+        // Initialize HTML resource (contains inlined CSS and JS)
+        PreloadedResource htmlResource;
+        const char* html_content = GetWebAppHTML();
+        unsigned int html_size = GetWebAppHTMLSize();
+        
+        if (html_content && html_size > 0) {
+            htmlResource.data = std::vector<uint8_t>(html_content, html_content + html_size);
+            htmlResource.mimeType = GetMimeType("/index.html");
+            htmlResource.loaded = true;
+            g_preloadedResources["/index.html"] = std::move(htmlResource);
+            
+            // Log successful preload
+            std::string sizeStr = std::to_string(html_size);
+            // Note: We can't use Logger here as it might not be initialized yet
+            // Logger will be used in main.cpp after this function returns
+        } else {
+            // Log failure - resource not available
+            // Note: We can't use Logger here as it might not be initialized yet
+        }
+        
+        g_resourcesInitialized = true;
+    }
     
     int GetResourceId(const std::string& path) {
         auto it = resourceMap.find(path);
@@ -22,6 +56,11 @@ namespace ResourceUtil {
     }
     
     std::vector<uint8_t> LoadBinaryResource(int resource_id) {
+        // Ensure resources are initialized
+        if (!g_resourcesInitialized) {
+            InitializePreloadedResources();
+        }
+        
         // Load HTML content from webapp.hpp
         if (resource_id == IDR_HTML_INDEX) {
             const char* html_content = GetWebAppHTML();
@@ -33,6 +72,46 @@ namespace ResourceUtil {
         
         // Return empty vector for unknown resources
         return std::vector<uint8_t>();
+    }
+    
+    const PreloadedResource* GetPreloadedResource(const std::string& path) {
+        std::lock_guard<std::mutex> lock(g_resourceMutex);
+        
+        // Ensure resources are initialized
+        if (!g_resourcesInitialized) {
+            InitializePreloadedResources();
+        }
+        
+        auto it = g_preloadedResources.find(path);
+        if (it != g_preloadedResources.end() && it->second.loaded) {
+            return &it->second;
+        }
+        
+        return nullptr;
+    }
+    
+    bool AreResourcesInitialized() {
+        std::lock_guard<std::mutex> lock(g_resourceMutex);
+        return g_resourcesInitialized;
+    }
+    
+    PreloadStats GetPreloadStats() {
+        std::lock_guard<std::mutex> lock(g_resourceMutex);
+        
+        PreloadStats stats = {};
+        stats.totalResources = static_cast<int>(g_preloadedResources.size());
+        stats.loadedResources = 0;
+        stats.totalBytes = 0;
+        
+        for (const auto& pair : g_preloadedResources) {
+            if (pair.second.loaded) {
+                stats.loadedResources++;
+                stats.totalBytes += pair.second.data.size();
+            }
+        }
+        
+        stats.allLoaded = (stats.loadedResources == stats.totalResources) && (stats.totalResources > 0);
+        return stats;
     }
     
     std::string GetMimeType(const std::string& path) {

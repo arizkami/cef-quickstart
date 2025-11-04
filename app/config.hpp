@@ -93,10 +93,9 @@ public:
         return "index.html";
     }
     
-    // Window mode configuration
+    // Window mode configuration - FORCE BORDERLESS
     static WindowMode GetWindowMode() {
-        // Default to borderless for custom UI experience
-        // Can be overridden by command line args or config file
+        // Force borderless mode for custom UI experience
         return WindowMode::BORDERLESS;
     }
     

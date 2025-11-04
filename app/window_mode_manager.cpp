@@ -19,19 +19,18 @@
     #endif
 #endif
 
-// Static member initialization
+// Static member initialization - FORCE BORDERLESS MODE
 WindowMode WindowModeManager::current_mode_ = WindowMode::BORDERLESS;
 bool WindowModeManager::initialized_ = false;
 
 void WindowModeManager::Initialize() {
     if (initialized_) return;
     
-    // Load initial mode from config
-    current_mode_ = AppConfig::GetWindowMode();
+    // Force borderless mode - ignore config
+    current_mode_ = WindowMode::BORDERLESS;
     
     initialized_ = true;
-    std::string mode_str = (current_mode_ == WindowMode::WINDOWED) ? "windowed" : "borderless";
-    Logger::LogMessage("WindowModeManager: Initialized with " + mode_str + " mode");
+    Logger::LogMessage("WindowModeManager: Initialized with FORCED borderless mode");
 }
 
 void WindowModeManager::ApplyWindowMode(CefRefPtr<CefWindow> window, WindowMode mode) {

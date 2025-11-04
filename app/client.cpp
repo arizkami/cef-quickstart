@@ -1,6 +1,8 @@
 #include "client.hpp"
 #include "config.hpp"
 #include "logger.hpp"
+#include "resourceutil.hpp"
+#include "loading_manager.hpp"
 #include "internal/simpleipc.hpp"
 #include "window_mode_manager.hpp"
 #include "include/wrapper/cef_helpers.h"
@@ -28,6 +30,8 @@ void CloseBrowserTask::Execute() {
 
 // SimpleClient implementation
 SimpleClient::SimpleClient() {
+    // Note: Resources are now preloaded in main.cpp before client creation
+    
     // Create message router for JavaScript-to-C++ communication
     CefMessageRouterConfig config;
     message_router_ = CefMessageRouterBrowserSide::Create(config);
@@ -492,6 +496,21 @@ void SimpleClient::OnLoadStart(CefRefPtr<CefBrowser> browser,
         
         // Initialize IPC system
         SimpleIPC::InitializeIPC(frame);
+    }
+}
+
+void SimpleClient::OnLoadEnd(CefRefPtr<CefBrowser> browser,
+                            CefRefPtr<CefFrame> frame,
+                            int httpStatusCode) {
+    CEF_REQUIRE_UI_THREAD();
+    
+    if (frame->IsMain()) {
+        Logger::LogMessage("Main frame loaded successfully (HTTP " + std::to_string(httpStatusCode) + ")");
+        
+        // Notify loading manager that content is loaded
+        LoadingManager& loadingManager = LoadingManager::GetInstance();
+        loadingManager.SetState(LoadingManager::READY, "Application ready");
+        loadingManager.OnContentLoaded();
     }
 }
 

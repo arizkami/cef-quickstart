@@ -33,18 +33,36 @@ CefRefPtr<CefResourceHandler> BinaryResourceProvider::Create(
     }
     Logger::LogMessage("BinaryResourceProvider: Extracted path: " + path);
     
-    // Get resource ID from path
-    int resource_id = ResourceUtil::GetResourceId(path);
-    Logger::LogMessage("BinaryResourceProvider: Resource ID: " + std::to_string(resource_id));
-    if (resource_id == -1) {
-        Logger::LogMessage("BinaryResourceProvider: Resource not found for path: " + path);
-        return nullptr; // Resource not found
+    // For single-file HTML build, all requests should go to index.html
+    // since CSS and JS are inlined
+    std::string actualPath = path;
+    if (path != "/index.html") {
+        // Redirect all other requests to index.html for single-file build
+        actualPath = "/index.html";
+        Logger::LogMessage("BinaryResourceProvider: Redirecting " + path + " to " + actualPath + " (single-file build)");
     }
     
-    // Load resource data
-    std::vector<uint8_t> resource_data = ResourceUtil::LoadBinaryResource(resource_id);
-    if (resource_data.empty()) {
-        return nullptr;
+    // Try to get preloaded resource first
+    const ResourceUtil::PreloadedResource* preloaded = ResourceUtil::GetPreloadedResource(actualPath);
+    std::vector<uint8_t> resource_data;
+    
+    if (preloaded && preloaded->loaded) {
+        Logger::LogMessage("BinaryResourceProvider: Using preloaded resource for path: " + actualPath);
+        resource_data = preloaded->data;
+    } else {
+        // Fallback to traditional resource loading
+        int resource_id = ResourceUtil::GetResourceId(actualPath);
+        Logger::LogMessage("BinaryResourceProvider: Resource ID: " + std::to_string(resource_id));
+        if (resource_id == -1) {
+            Logger::LogMessage("BinaryResourceProvider: Resource not found for path: " + actualPath);
+            return nullptr; // Resource not found
+        }
+        
+        resource_data = ResourceUtil::LoadBinaryResource(resource_id);
+        if (resource_data.empty()) {
+            Logger::LogMessage("BinaryResourceProvider: Failed to load resource data for path: " + actualPath);
+            return nullptr;
+        }
     }
     
     // Create stream reader
@@ -53,8 +71,8 @@ CefRefPtr<CefResourceHandler> BinaryResourceProvider::Create(
         return nullptr;
     }
     
-    // Get MIME type
-    std::string mime_type = ResourceUtil::GetMimeType(path);
+    // Get MIME type (always HTML for single-file build)
+    std::string mime_type = ResourceUtil::GetMimeType(actualPath);
     
     // Create and return the resource handler
     return new CefStreamResourceHandler(mime_type, stream);

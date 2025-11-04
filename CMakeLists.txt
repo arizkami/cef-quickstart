@@ -35,7 +35,7 @@ set(SDL_TEST OFF CACHE BOOL "Build SDL3 test programs")
 
 FetchContent_MakeAvailable(SDL3)
 
-# Set CEF version and platform - using minimal build for smaller size
+# Set CEF version and platform - Windows and Linux only
 set(CEF_VERSION "138.0.27+g0b28f18+chromium-138.0.7204.158")
 if(WIN32)
     if(CMAKE_SIZEOF_VOID_P EQUAL 8)
@@ -43,14 +43,14 @@ if(WIN32)
     else()
         set(CEF_PLATFORM "windows32")
     endif()
-elseif(APPLE)
-    set(CEF_PLATFORM "macosx64")
-else()
+elseif(UNIX AND NOT APPLE)
     if(CMAKE_SIZEOF_VOID_P EQUAL 8)
         set(CEF_PLATFORM "linux64")
     else()
         set(CEF_PLATFORM "linux32")
     endif()
+else()
+    message(FATAL_ERROR "Unsupported platform. Only Windows and Linux are supported.")
 endif()
 
 # CEF download URL and paths
@@ -185,6 +185,7 @@ if(WIN32)
         app/internal/simpleipc.cpp
         app/native_window_controls.cpp
         app/window_mode_manager.cpp
+        app/loading_manager.cpp
     )
 else()
     add_executable(${PROJECT_NAME}
@@ -195,6 +196,7 @@ else()
         app/webapp.cpp
         app/binaryresourceprovider.cpp
         app/resourceutil.cpp
+        app/loading_manager.cpp
         app/internal/simpleipc.cpp
         app/native_window_controls.cpp
         app/window_mode_manager.cpp
@@ -221,9 +223,7 @@ target_link_libraries(${PROJECT_NAME}
 # Add platform-specific libraries for native window controls
 if(WIN32)
     target_link_libraries(${PROJECT_NAME} dwmapi)
-elseif(APPLE)
-    target_link_libraries(${PROJECT_NAME} "-framework Cocoa")
-elseif(UNIX)
+elseif(UNIX AND NOT APPLE)
     # Find and link GTK4 or GTK3
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(GTK4 gtk4)

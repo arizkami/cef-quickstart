@@ -37,6 +37,7 @@
 #include "include/cef_image.h"
 #include <filesystem>
 #include <fstream>
+#include <chrono>
 
 // Local includes
 #include "config.hpp"
@@ -44,6 +45,8 @@
 #include "client.hpp"
 #include "app.hpp"
 #include "binaryresourceprovider.hpp"
+#include "resourceutil.hpp"
+#include "loading_manager.hpp"
 #include "native_window_controls.hpp"
 #include "window_mode_manager.hpp"
 
@@ -280,12 +283,13 @@ public:
         Logger::LogMessage("Window created on Linux platform");
 #endif
         
-        // Initialize window mode manager and apply initial mode
+        // Initialize window mode manager and force borderless mode
         WindowModeManager::Initialize();
         WindowModeManager::RestoreWindowState(window);
         
-        // Apply the configured window mode
-        WindowModeManager::ApplyWindowMode(window, WindowModeManager::GetCurrentMode(window));
+        // Force borderless mode
+        WindowModeManager::SetBorderlessMode(window);
+        Logger::LogMessage("Forced borderless mode on window creation");
         
         // Temporarily disable native controls position setup
         // NativeWindowControls::SetControlsPosition(window, 0, 0, 0, 32);
@@ -293,13 +297,10 @@ public:
         Logger::LogMessage("OnWindowCreated completed");
     }
     
-    // Use frameless window for native window controls
+    // Use frameless window for borderless mode
     bool IsFrameless(CefRefPtr<CefWindow> window) override {
-#ifdef _WIN32
-        return false;  // Windows: Use native frame with extended client area
-#else
-        return true;   // macOS/Linux: Use frameless with native controls
-#endif
+        // Force borderless/frameless mode on all platforms
+        return true;
     }
     
     // Allow window to be resizable
@@ -350,6 +351,10 @@ int main(int argc, char* argv[]) {
 #endif
 
     Logger::LogMessage("Starting CEF application initialization");
+    
+    // Initialize loading manager
+    LoadingManager& loadingManager = LoadingManager::GetInstance();
+    loadingManager.SetState(LoadingManager::INITIALIZING, "Starting application");
 
     // Create app instance for both main and sub-processes
     CefRefPtr<SimpleApp> app(new SimpleApp);
@@ -406,7 +411,32 @@ int main(int argc, char* argv[]) {
     // Register scheme handler factory for miko:// protocol
     CefRegisterSchemeHandlerFactory("miko", "", new BinaryResourceProvider());
 
-    // Create CEF views-based borderless window
+    // PRELOAD RESOURCES BEFORE RENDERING
+    loadingManager.SetState(LoadingManager::PRELOADING_RESOURCES, "Loading application resources");
+    Logger::LogMessage("=== PRELOADING RESOURCES BEFORE RENDERING ===");
+    ResourceUtil::InitializePreloadedResources();
+    
+    // Get preload statistics
+    ResourceUtil::PreloadStats stats = ResourceUtil::GetPreloadStats();
+    
+    if (ResourceUtil::AreResourcesInitialized() && stats.allLoaded) {
+        Logger::LogMessage("✓ Resources preloaded successfully");
+        Logger::LogMessage("  - Total resources: " + std::to_string(stats.totalResources));
+        Logger::LogMessage("  - Loaded resources: " + std::to_string(stats.loadedResources));
+        Logger::LogMessage("  - Total size: " + std::to_string(stats.totalBytes) + " bytes");
+    } else {
+        Logger::LogMessage("⚠ Warning: Resource preloading incomplete");
+        Logger::LogMessage("  - Total resources: " + std::to_string(stats.totalResources));
+        Logger::LogMessage("  - Loaded resources: " + std::to_string(stats.loadedResources));
+        Logger::LogMessage("  - Total size: " + std::to_string(stats.totalBytes) + " bytes");
+        loadingManager.SetError("Resource preloading failed");
+        return 1;
+    }
+    Logger::LogMessage("=== PRELOAD COMPLETE - CREATING WINDOW ===");
+
+    // Create CEF views-based borderless window (HIDDEN initially)
+    loadingManager.SetState(LoadingManager::CREATING_WINDOW, "Creating application window");
+    
     g_client = new SimpleClient();
     std::string startupUrl = AppConfig::GetStartupUrl();
     
@@ -434,39 +464,53 @@ int main(int argc, char* argv[]) {
     // Set window title
     g_cef_window->SetTitle(windowTitle);
     
-    // Show the window
-    g_cef_window->Show();
+    // Register window with loading manager (but DON'T show it yet)
+    loadingManager.SetWindow(g_cef_window);
+    loadingManager.SetState(LoadingManager::LOADING_CONTENT, "Loading web content");
     
-    // Center the window
-    g_cef_window->CenterWindow(CefSize(1200, 800));
-
-    // Final taskbar icon verification after window is fully shown
+    // NOTE: Window will be shown automatically when content is loaded
+    
+    // Setup taskbar icon (window is hidden but handle exists)
 #ifdef _WIN32
-    Sleep(200); // Brief delay for window initialization
     HWND hwnd = g_cef_window->GetWindowHandle();
     if (hwnd) {
         SetPermanentTaskbarIcon(hwnd);
-        Logger::LogMessage("Final taskbar icon verification completed");
+        Logger::LogMessage("Taskbar icon configured (window hidden)");
     }
-#else
-    usleep(200000); // 200ms delay for window initialization on Linux
-    Logger::LogMessage("Window initialization completed on Linux");
 #endif
 
     // Log startup information
-    Logger::LogMessage("=== SwipeIDE CEF + SDL Application ===");
+    Logger::LogMessage("=== SwipeIDE CEF Application (Electron-like Loading) ===");
     Logger::LogMessage("Mode: " + std::string(AppConfig::IsDebugMode() ? "DEBUG" : "RELEASE"));
     Logger::LogMessage("URL: " + startupUrl);
+    Logger::LogMessage("Status: Window created but hidden until content loads");
     if (AppConfig::IsDebugMode()) {
         Logger::LogMessage("Remote debugging: http://localhost:9222");
-        Logger::LogMessage("Make sure React dev server is running: cd renderer && bun run dev");
+        Logger::LogMessage("Make sure React dev server is running: cd webapp && bun run dev");
     }
-    Logger::LogMessage("======================================");
+    Logger::LogMessage("========================================================");
 
-    // Main loop
+    // Main loop with loading timeout
+    auto start_time = std::chrono::steady_clock::now();
+    const auto timeout_duration = std::chrono::seconds(30); // 30 second timeout
+    bool timeout_logged = false;
+    
     while (g_running && g_cef_window && !g_cef_window->IsClosed()) {
         HandleEvents();
         CefDoMessageLoopWork();
+        
+        // Check for loading timeout
+        auto current_time = std::chrono::steady_clock::now();
+        auto elapsed = current_time - start_time;
+        
+        if (elapsed > timeout_duration && !loadingManager.HasError() && 
+            loadingManager.GetState() != LoadingManager::READY && !timeout_logged) {
+            Logger::LogMessage("⚠ Loading timeout - showing window anyway");
+            loadingManager.SetState(LoadingManager::READY, "Timeout - forcing show");
+            loadingManager.ShowWindowWhenReady();
+            timeout_logged = true;
+        }
+        
 #ifdef _WIN32
         Sleep(1); // Small delay to prevent 100% CPU usage
 #else

@@ -1,13 +1,17 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   Minus,
   X,
-  Square,
   Maximize,
   Copy
 } from 'lucide-react';
+
+import CloseIcon from '../assets/close.svg'
+import MaximizeIcon from '../assets/maximize.svg'
+import RestoreIcon from '../assets/restore.svg'
+import MinimizeIcon from '../assets/minimize.svg'
 
 interface CefQueryRequest {
   request: string;
@@ -101,8 +105,6 @@ export default function TitleBar() {
     }
   };
 
-
-
   // macOS-style traffic light button
   const MacOSButton = ({
     onClick,
@@ -112,7 +114,7 @@ export default function TitleBar() {
   }: {
     onClick: () => void;
     color: 'red' | 'yellow' | 'green';
-    icon: typeof X;
+    icon: React.ComponentType<any>;
     tooltip: string;
   }) => {
     const colorClasses = {
@@ -142,12 +144,12 @@ export default function TitleBar() {
   // Windows/Linux-style button
   const WindowsButton = ({
     onClick,
-    icon: Icon,
+    iconSrc,
     tooltip,
     isClose = false
   }: {
     onClick: () => void;
-    icon: typeof X;
+    iconSrc: string;
     tooltip: string;
     isClose?: boolean;
   }) => {
@@ -158,10 +160,10 @@ export default function TitleBar() {
             onClick={onClick}
             variant="ghost"
             size="icon"
-            className={`h-8 w-14 rounded-none ${isClose ? 'hover:bg-red-600 hover:text-white' : 'hover:bg-accent'}`}
+            className={`h-8 w-8 rounded-none ${isClose ? 'hover:bg-red-600 hover:text-white' : 'hover:bg-accent'}`}
             style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
           >
-            <Icon className="h-4 w-4" />
+            <img src={iconSrc} alt={tooltip} className="h-2.5 w-2.5" />
           </Button>
         </TooltipTrigger>
         <TooltipContent side="bottom">
@@ -177,7 +179,6 @@ export default function TitleBar() {
         className="h-10 w-full flex bg-transparent border-border items-center justify-end shrink-0 select-none"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
-
         {/* Right Section: Window Controls */}
         {windowControlsInfo.useWebControls && (
           <div className="flex items-center h-full" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
@@ -204,21 +205,21 @@ export default function TitleBar() {
                 />
               </div>
             ) : (
-              // Windows/Linux-style controls
+              // Windows/Linux-style controls using SVG assets
               <div className="flex items-center h-full">
                 <WindowsButton
                   onClick={handleMinimize}
-                  icon={Minus}
+                  iconSrc={MinimizeIcon}
                   tooltip="Minimize"
                 />
                 <WindowsButton
                   onClick={handleMaximize}
-                  icon={isMaximized ? Copy : Square}
+                  iconSrc={isMaximized ? RestoreIcon : MaximizeIcon}
                   tooltip={isMaximized ? "Restore" : "Maximize"}
                 />
                 <WindowsButton
                   onClick={handleClose}
-                  icon={X}
+                  iconSrc={CloseIcon}
                   tooltip="Close"
                   isClose={true}
                 />
